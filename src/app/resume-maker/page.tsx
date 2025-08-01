@@ -1,3 +1,4 @@
+// app/resume-maker/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -9,7 +10,7 @@ import ResumePreview from "@/app/components/resume-maker/ResumePreview";
 import { ResumeData, initialData, blankData } from "@/app/lib/resume-data";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
-import { incrementResumeCreated } from "@/app/actions/stats"; // <-- Import the new server action
+import { incrementResumeCreated } from "@/app/actions/stats";
 
 export type ThemeName = "NadeemAhmad" | "MaxJohnson";
 
@@ -17,44 +18,47 @@ export default function ResumeMakerPage() {
   const [data, setData] = useState<ResumeData>(initialData);
   const [activeTheme, setActiveTheme] = useState<ThemeName>("NadeemAhmad");
 
-  // CHANGED: The function is now async to allow for the server action call.
   const handleDownloadPdf = async () => {
     const resumeElement = document.getElementById("resume-preview-content");
     if (!resumeElement) return;
-  
-    // Create a clone with PDF-safe styling
+
     const clone = resumeElement.cloneNode(true) as HTMLElement;
     clone.style.position = 'absolute';
     clone.style.left = '-9999px';
-    clone.style.width = '794px'; // A4 width in pixels
+    clone.style.width = '794px';
     clone.style.backgroundColor = 'white';
-    clone.style.minHeight = '1123px'; // A4 height in pixels (297mm)
+    clone.style.minHeight = '1123px';
     document.body.appendChild(clone);
-  
-    // Convert all colors to PDF-safe formats
+
+    // --- THIS IS THE FIX ---
+    // We now explicitly check for the "oklch" color function that was causing the error.
     const elements = clone.querySelectorAll('*');
     elements.forEach(el => {
       const computedStyle = window.getComputedStyle(el);
-      
+      const htmlEl = el as HTMLElement;
+
       // Fix background colors
       const bgColor = computedStyle.backgroundColor;
-      if (bgColor.includes('gradient') || bgColor.includes('lab')) {
-        (el as HTMLElement).style.backgroundColor = 'white';
+      if (bgColor.includes('gradient') || bgColor.includes('oklch') || bgColor.includes('lab')) {
+        // Find the closest plain color from the element's classes, or default to white
+        const colorClass = Array.from(htmlEl.classList).find(c => c.includes('bg-'));
+        htmlEl.style.backgroundColor = colorClass ? getComputedStyle(htmlEl).backgroundColor : 'white';
       }
-      
+
       // Fix text colors
       const textColor = computedStyle.color;
-      if (textColor.includes('lab')) {
-        (el as HTMLElement).style.color = 'rgb(31, 41, 55)';
+      if (textColor.includes('oklch') || textColor.includes('lab')) {
+        htmlEl.style.color = 'rgb(31, 41, 55)'; // Default to a safe dark gray
       }
       
       // Fix border colors
       const borderColor = computedStyle.borderColor;
-      if (borderColor.includes('lab')) {
-        (el as HTMLElement).style.borderColor = 'rgb(209, 213, 219)';
+      if (borderColor.includes('oklch') || borderColor.includes('lab')) {
+        htmlEl.style.borderColor = 'rgb(209, 213, 219)'; // Default to a safe light gray
       }
     });
-  
+    // --- END OF FIX ---
+
     try {
       const canvas = await html2canvas(clone, {
         scale: 2,
@@ -64,14 +68,14 @@ export default function ResumeMakerPage() {
         scrollY: 0,
         windowHeight: clone.scrollHeight,
       });
-  
+
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "pt",
         format: "a4",
       });
-  
+
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
       const imgProps = pdf.getImageProperties(imgData);
@@ -79,30 +83,26 @@ export default function ResumeMakerPage() {
       const ratio = pdfWidth / imgProps.width;
       const imgWidth = pdfWidth;
       const imgHeight = imgProps.height * ratio;
-  
+
       pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
       
+      // Handle multi-page content if necessary
       const remainingHeight = imgHeight - pdfHeight;
       if (remainingHeight > 0) {
         pdf.addPage();
         pdf.addImage(imgData, "PNG", 0, -pdfHeight, imgWidth, imgHeight);
       }
-  
+
       pdf.save(`${(data.personal.name || "resume").replace(/ /g, "-")}.pdf`);
-  
-      // --- START: ADDED SECTION ---
-      // After the PDF is successfully saved, call the server action.
-      // We don't need to wait for it to complete ("fire and forget").
+
+      // Call the server action to increment the count
       incrementResumeCreated().catch(err => {
-        // Optional: Log if the server action call itself fails
         console.error("Failed to call incrementResumeCreated:", err);
       });
-      // --- END: ADDED SECTION ---
-  
+
     } catch (error) {
       console.error("Error generating PDF:", error);
     } finally {
-      // Ensure the clone is always removed
       document.body.removeChild(clone);
     }
   };
