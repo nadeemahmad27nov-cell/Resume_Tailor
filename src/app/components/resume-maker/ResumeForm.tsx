@@ -47,33 +47,17 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
         }
     };
 
-    const addItem = <T,>(field: keyof ResumeData, newItem: T) => {
-  setData(prev => {
-    if (field === 'skills') {
-      // This shouldn't be called for skills since they have their own addSkill function
-      return prev;
-    } else {
-      return { ...prev, [field]: [...(prev[field] as T[]), newItem] };
-    }
-  });
+   const addItem = (field: 'education' | 'projects' | 'certificates', newItem: EducationData | ProjectData | CertificateData) => {
+  setData(prev => ({
+    ...prev,
+    [field]: [...prev[field], newItem]
+  }));
 };
-  const removeItem = <T extends { id: string }>(field: keyof ResumeData, id: string) => {
-  setData(prev => {
-    if (field === 'skills') {
-      // Handle skills with explicit typing
-      const updatedSkills = {
-        languages: prev.skills.languages.filter(skill => skill.id !== id),
-        fullstack: prev.skills.fullstack.filter(skill => skill.id !== id),
-        database: prev.skills.database.filter(skill => skill.id !== id),
-        architecture: prev.skills.architecture.filter(skill => skill.id !== id),
-        webscraping: prev.skills.webscraping.filter(skill => skill.id !== id),
-      };
-      return { ...prev, skills: updatedSkills };
-    } else {
-      // Handle all other array fields
-      return { ...prev, [field]: (prev[field] as T[]).filter(item => item.id !== id) };
-    }
-  });
+ const removeItem = (field: 'education' | 'projects' | 'certificates', id: string) => {
+  setData(prev => ({
+    ...prev,
+    [field]: prev[field].filter((item: { id: string }) => item.id !== id)
+  }));
 };
     const updateItem = <T extends { id: string }>(field: keyof ResumeData, id: string, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -88,7 +72,15 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
             setSkillInputs(prev => ({ ...prev, [category]: ""}));
         }
     };
-    const removeSkill = (category: keyof ResumeData['skills'], id: string) => { setData(prev => ({ ...prev, skills: { ...prev.skills, [category]: prev.skills[category].filter(s => s.id !== id) } }));};
+   const removeSkill = (category: keyof ResumeData['skills'], id: string) => {
+  setData(prev => ({
+    ...prev,
+    skills: {
+      ...prev.skills,
+      [category]: prev.skills[category].filter(skill => skill.id !== id)
+    }
+  }));
+};
 
     return (
         <div className="space-y-4">
