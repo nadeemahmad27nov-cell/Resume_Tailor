@@ -48,7 +48,23 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
     };
 
     const addItem = <T,>(field: keyof ResumeData, newItem: T) => { setData(prev => ({ ...prev, [field]: [...(prev[field] as T[]), newItem] })); };
-    const removeItem = <T extends { id: string }>(field: keyof ResumeData, id: string) => { setData(prev => ({...prev, [field]: (prev[field] as T[]).filter(item => item.id !== id) })); };
+   const removeItem = <T extends { id: string }>(field: keyof ResumeData, id: string) => {
+    setData(prev => {
+        if (field === 'skills') {
+            // Handle skills differently since it's an object
+            const updatedSkills = Object.fromEntries(
+                Object.entries(prev.skills).map(([category, skills]) => [
+                    category,
+                    skills.filter(skill => skill.id !== id)
+                ])
+            );
+            return { ...prev, skills: updatedSkills };
+        } else {
+            // Handle all other array fields
+            return { ...prev, [field]: (prev[field] as T[]).filter(item => item.id !== id) };
+        }
+    });
+};
     const updateItem = <T extends { id: string }>(field: keyof ResumeData, id: string, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setData(prev => ({ ...prev, [field]: (prev[field] as T[]).map(item => item.id === id ? { ...item, [name]: value } : item) }));
