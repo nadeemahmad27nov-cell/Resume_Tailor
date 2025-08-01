@@ -2,7 +2,7 @@
 "use server";
 
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/lib/authOptions";
+import { authOptions } from "@/app/lib/authOptions"; // Assuming this path is correct
 import clientPromise from "@/app/lib/mongodb";
 import { revalidatePath } from "next/cache";
 
@@ -31,12 +31,18 @@ export async function getUserProfile() {
       return null; // User exists but hasn't saved a profile yet
     }
 
-    // Important: Serialize the data to make it a plain object for the client
+    // --- THIS IS THE FIX ---
+    // Instead of spreading `...profile`, we explicitly construct the object.
+    // This guarantees that `name`, `title`, and `bio` will always be present,
+    // even if they are just empty strings, which satisfies TypeScript.
     return {
-      ...profile,
       _id: profile._id.toString(),
       userId: profile.userId.toString(),
+      name: profile.name || "",
+      title: profile.title || "",
+      bio: profile.bio || "",
     };
+
   } catch (error) {
     console.error("Failed to fetch user profile:", error);
     return null;
@@ -44,10 +50,10 @@ export async function getUserProfile() {
 }
 
 // Action to create or update a user's profile (an "upsert" operation)
-export async function updateUserProfile(profileData: UserProfile) {
+export async function updateUserProfile(profileData: UserProfile): Promise<{ success: boolean; error?: string }> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    return { error: "User not authenticated." };
+    return { success: false, error: "User not authenticated." };
   }
 
   try {
@@ -56,18 +62,19 @@ export async function updateUserProfile(profileData: UserProfile) {
     const dataCollection = db.collection("data");
 
     // Use updateOne with the 'upsert: true' option.
-    // This will create the document if it doesn't exist, or update it if it does.
     await dataCollection.updateOne(
-      { userId: session.user.id }, // The filter to find the document
-      { $set: { ...profileData, userId: session.user.id } }, // The data to set
-      { upsert: true } // The magic option
+      { userId: session.user.id },
+      { $set: { ...profileData, userId: session.user.id } },
+      { upsert: true }
     );
 
-    // Revalidate the path so the user sees the updated data if they refresh
+    // Revalidate the path so the user sees the updated data.
     revalidatePath("/settings");
     return { success: true };
+
   } catch (error) {
     console.error("Failed to update user profile:", error);
-    return { error: "Database operation failed." };
+    const err = error as Error;
+    return { success: false, error: err.message || "Database operation failed." };
   }
 }
