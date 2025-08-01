@@ -2,7 +2,7 @@
 "use server";
 
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/lib/authOptions"; // Assuming this path is correct
+import { authOptions } from "@/app/lib/authOptions";
 import clientPromise from "@/app/lib/mongodb";
 import { revalidatePath } from "next/cache";
 
@@ -13,11 +13,15 @@ export interface UserProfile {
   bio: string;
 }
 
-// Action to get the current user's profile from the 'data' collection
+/**
+ * Fetches the current user's profile from the database.
+ * This function is now robust and guarantees a complete profile object
+ * is returned if a user record is found, preventing type errors.
+ */
 export async function getUserProfile() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    return null; // No user, no profile
+    return null; // No user is logged in.
   }
 
   try {
@@ -27,14 +31,17 @@ export async function getUserProfile() {
 
     const profile = await dataCollection.findOne({ userId: session.user.id });
 
+    // If no profile exists yet in the DB for this user, return null.
+    // The client component will handle this by showing an empty form.
     if (!profile) {
-      return null; // User exists but hasn't saved a profile yet
+      return null;
     }
 
     // --- THIS IS THE FIX ---
-    // Instead of spreading `...profile`, we explicitly construct the object.
+    // We now explicitly construct the return object.
     // This guarantees that `name`, `title`, and `bio` will always be present,
-    // even if they are just empty strings, which satisfies TypeScript.
+    // using a default empty string ("") if the field is missing in the database.
+    // This satisfies the type requirements of the SettingsClient component.
     return {
       _id: profile._id.toString(),
       userId: profile.userId.toString(),
@@ -49,7 +56,10 @@ export async function getUserProfile() {
   }
 }
 
-// Action to create or update a user's profile (an "upsert" operation)
+/**
+ * Creates or updates a user's profile in the database.
+ * This is an "upsert" operation.
+ */
 export async function updateUserProfile(profileData: UserProfile): Promise<{ success: boolean; error?: string }> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -61,14 +71,15 @@ export async function updateUserProfile(profileData: UserProfile): Promise<{ suc
     const db = client.db();
     const dataCollection = db.collection("data");
 
-    // Use updateOne with the 'upsert: true' option.
+    // Use updateOne with `upsert: true`.
+    // This creates the document if it doesn't exist or updates it if it does.
     await dataCollection.updateOne(
-      { userId: session.user.id },
-      { $set: { ...profileData, userId: session.user.id } },
-      { upsert: true }
+      { userId: session.user.id }, // The filter to find the document
+      { $set: { ...profileData, userId: session.user.id } }, // The data to set
+      { upsert: true } // The upsert option
     );
 
-    // Revalidate the path so the user sees the updated data.
+    // Revalidate the /settings path to ensure the Server Component re-fetches the fresh data.
     revalidatePath("/settings");
     return { success: true };
 
