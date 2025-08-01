@@ -1,7 +1,7 @@
 // /components/resume-maker/ResumeForm.tsx
 "use client";
 
-import { ResumeData, Skill, CertificateData } from "@/app/lib/resume-data";
+import { ResumeData, Skill, CertificateData, EducationData, ProjectData } from "@/app/lib/resume-data";
 import { Dispatch, SetStateAction, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Plus, Trash2, UploadCloud, ChevronDown } from "lucide-react";
@@ -13,6 +13,9 @@ interface Props {
   setData: Dispatch<SetStateAction<ResumeData>>;
   activeTheme: ThemeName;
 }
+
+// Define a type for the fields that are arrays of items. This is the key to the fix.
+type ItemListField = 'education' | 'projects' | 'certificates';
 
 export default function ResumeForm({ data, setData, activeTheme }: Props) {
     const [openSections, setOpenSections] = useState({
@@ -47,14 +50,35 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
         }
     };
 
-    const addItem = <T,>(field: keyof ResumeData, newItem: T) => { setData(prev => ({ ...prev, [field]: [...(prev[field] as T[]), newItem] })); };
-    const removeItem = <T extends { id: string }>(field: keyof ResumeData, id: string) => { setData(prev => ({...prev, [field]: (prev[field] as T[]).filter(item => item.id !== id) })); };
-    const updateItem = <T extends { id: string }>(field: keyof ResumeData, id: string, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    // --- CORRECTED & TYPE-SAFE HANDLERS ---
+    const addItem = (field: ItemListField, newItem: EducationData | ProjectData | CertificateData) => {
+      setData(prev => ({
+        ...prev,
+        [field]: [...prev[field], newItem]
+      }));
+    };
+
+    const removeItem = (field: ItemListField, id: string) => {
+      setData(prev => ({
+        ...prev,
+        // The `filter` method is now safe because `field` is guaranteed to be an array key
+        [field]: prev[field].filter((item: { id: string }) => item.id !== id)
+      }));
+    };
+    
+    const updateItem = (field: ItemListField, id: string, e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        setData(prev => ({ ...prev, [field]: (prev[field] as T[]).map(item => item.id === id ? { ...item, [name]: value } : item) }));
+        setData(prev => ({
+            ...prev,
+            // The `map` method is now safe for the same reason
+            [field]: prev[field].map(item =>
+                item.id === id ? { ...item, [name]: value } : item
+            )
+        }));
     };
 
     const handleSkillInputChange = (e: React.ChangeEvent<HTMLInputElement>) => { const { name, value } = e.target; setSkillInputs(prev => ({ ...prev, [name]: value }));};
+    
     const addSkill = (category: keyof ResumeData['skills']) => {
         const skillName = skillInputs[category].trim();
         if (skillName) {
@@ -62,7 +86,16 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
             setSkillInputs(prev => ({ ...prev, [category]: ""}));
         }
     };
-    const removeSkill = (category: keyof ResumeData['skills'], id: string) => { setData(prev => ({ ...prev, skills: { ...prev.skills, [category]: prev.skills[category].filter(s => s.id !== id) } }));};
+    
+    const removeSkill = (category: keyof ResumeData['skills'], id: string) => {
+      setData(prev => ({
+        ...prev,
+        skills: {
+          ...prev.skills,
+          [category]: prev.skills[category].filter(skill => skill.id !== id)
+        }
+      }));
+    };
 
     return (
         <div className="space-y-4">
@@ -160,9 +193,8 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
                 <AddButton onClick={() => addItem('certificates', { id: uuidv4(), name: "", issuer: "", date: ""})} text="Add Certificate"/>
             </Section>
 
-            {/* --- Skills Section (UPDATED) --- */}
+            {/* --- Skills Section --- */}
             <Section title="Skills" isOpen={openSections.skills} onToggle={() => toggleSection('skills')}>
-                {/* This wrapper ensures each skill group is on a new line */}
                 <div className="flex flex-col gap-y-4">
                     <SkillInputGroup
                         label="Programming Languages"
@@ -219,7 +251,6 @@ export default function ResumeForm({ data, setData, activeTheme }: Props) {
         </div>
     );
 }
-
 
 // --- Reusable Form Components (No changes needed below) ---
 const Section = ({ title, children, isOpen, onToggle }: { title: string, children: React.ReactNode, isOpen: boolean, onToggle: () => void }) => (
