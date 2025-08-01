@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Clipboard, ClipboardCheck, CheckCircle } from 'lucide-react';
 import { Variants } from "framer-motion";
-import { circOut, linear } from "framer-motion";
+import { circOut } from "framer-motion";
 
 interface FinalResumeBuilderProps {
     acceptedSuggestions: string[];
@@ -35,7 +35,7 @@ const backgroundAnimation: Variants = {
     transition: {
       duration: 4,
       repeat: Infinity,
-      ease: linear // ✅ Use the imported easing function
+      ease: "linear" // ✅ Use the imported easing function
     }
   }
 };// The key is adding 'as const' here
