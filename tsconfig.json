@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    "target": "es5", // Changed to "es5" for broader compatibility, the Next.js default.
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -8,7 +8,7 @@
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "node", // Changed to "node", the standard and most stable option for Next.js.
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "preserve",
@@ -18,19 +18,23 @@
         "name": "next"
       }
     ],
-    // This new option explicitly tells TypeScript where to find type definitions.
-    "typeRoots": ["./node_modules/@types", "./"], 
+    // "typeRoots" has been REMOVED. This is the key fix.
+    // TypeScript automatically finds types in node_modules/@types without this.
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
   },
   "include": [
+    // Your "include" array is correct, so it is preserved.
     "next-env.d.ts",
     "next-auth.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    // This is correct and essential.
+    "node_modules"
+  ]
 }
