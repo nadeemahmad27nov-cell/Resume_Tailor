@@ -1,3 +1,4 @@
+// app/actions/stats.ts
 "use server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/lib/authOptions";
@@ -17,49 +18,38 @@ export interface UserStats {
   ai_credits: number;
 }
 
-// This is your original, unchanged function.
-// --- THIS IS THE ONLY FUNCTION THAT WILL BE MODIFIED ---
 export async function getUserStats(): Promise<Partial<Omit<UserStats, "_id">> & { _id?: string }> {
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
     console.warn("No user session found. Cannot fetch stats.");
-    return {}; 
+    return {};
   }
 
   try {
     const client = await clientPromise;
     const db = client.db();
-    
-    // Query 1: Get the main stats document (Unchanged)
+
     const statsCollection = db.collection<UserStats>("stats");
     const stats = await statsCollection.findOne({ userId: session.user.id });
 
-    // --- ADDED LOGIC ---
-    // Query 2: Get the *actual* count of tracked applications from the correct collection.
-    // We use countDocuments for maximum efficiency.
     const applicationTrackerCollection = db.collection("application_tracker");
     const trackedApplicationsCount = await applicationTrackerCollection.countDocuments({ userId: session.user.id });
-    // --- END OF ADDED LOGIC ---
 
     if (!stats) {
       console.warn(`No stats found for user: ${session.user.id}`);
-      // Return default stats but with the CORRECT tracked application count
       return {
         resume_created: 0,
         application_tailored: 0,
-        application_tracked: trackedApplicationsCount, // Use the real count
+        application_tracked: trackedApplicationsCount,
         ai_credits: 0,
       };
     }
 
-    // --- MODIFIED RETURN ---
-    // Return the stats object, but explicitly OVERWRITE the application_tracked value
-    // with our new, accurate count.
     return {
         ...stats,
         _id: stats._id.toString(),
-        application_tracked: trackedApplicationsCount, // Use the real count
+        application_tracked: trackedApplicationsCount,
     };
 
   } catch (error) {
@@ -67,13 +57,12 @@ export async function getUserStats(): Promise<Partial<Omit<UserStats, "_id">> & 
     return {
       resume_created: 0,
       application_tailored: 0,
-      application_tracked: 0, // Return 0 on error
-      ai_credits: 240, 
+      application_tracked: 0,
+      ai_credits: 240,
     };
   }
 }
 
-// This is your existing function, unchanged.
 export async function incrementResumeCreated() {
   const session = await getServerSession(authOptions);
 
@@ -104,8 +93,6 @@ export async function incrementResumeCreated() {
   }
 }
 
-// --- UPDATED FUNCTION ---
-// The function now accepts the job details to be saved.
 export async function processSuccessfulAnalysis(jobTitle: string, jobDescription: string) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
@@ -116,18 +103,17 @@ export async function processSuccessfulAnalysis(jobTitle: string, jobDescription
     const client = await clientPromise;
     const db = client.db();
     const statsCollection = db.collection("stats");
-    
-    // Step 1: Perform the atomic update on the stats collection (unchanged)
+
     const result = await statsCollection.updateOne(
-      { 
+      {
         userId: session.user.id,
-        ai_credits: { $gte: ANALYSIS_CREDIT_COST } 
+        ai_credits: { $gte: ANALYSIS_CREDIT_COST }
       },
-      { 
-        $inc: { 
+      {
+        $inc: {
           application_tailored: 1,
           ai_credits: -ANALYSIS_CREDIT_COST
-        } 
+        }
       }
     );
 
@@ -136,17 +122,14 @@ export async function processSuccessfulAnalysis(jobTitle: string, jobDescription
       return { error: "Credit deduction failed on server." };
     }
 
-    // --- ADDED SECTION ---
-    // Step 2: On success, insert the job details into the new collection.
     const applicationTrackerCollection = db.collection("application_tracker");
     await applicationTrackerCollection.insertOne({
       userId: session.user.id,
       jobTitle,
       jobDescription,
-      status: 'Analyzed', // You can set a default status
+      status: 'Analyzed',
       createdAt: new Date(),
     });
-    // --- END OF ADDED SECTION ---
 
     revalidatePath("/dashboard");
     return { success: true };
@@ -155,13 +138,14 @@ export async function processSuccessfulAnalysis(jobTitle: string, jobDescription
     return { error: "Database operation failed." };
   }
 }
-// Add this new function to the end of your existing app/actions/stats.ts file.
-// It fetches all applications for the current user and sorts them by most recent.
 
+// =========================================================================================
+// == THIS IS THE FUNCTION THAT HAS BEEN FIXED =============================================
+// =========================================================================================
+// It now correctly handles database records that might be missing certain fields.
 export async function getTrackedApplications() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    // If there's no user, return an empty array.
     return [];
   }
 
@@ -172,25 +156,26 @@ export async function getTrackedApplications() {
 
     const applications = await applicationTrackerCollection
       .find({ userId: session.user.id })
-      .sort({ createdAt: -1 }) // Sort by newest first
+      .sort({ createdAt: -1 })
       .toArray();
 
-    // Important: We must serialize the data before sending it to the client.
-    // This converts the complex BSON types (like ObjectId and Date) to simple strings.
+    // THIS IS THE FIX: We explicitly construct the return object for each application.
+    // This guarantees that every field required by the TrackedApplication type exists,
+    // providing a default value if the field is missing from an older database record.
     return applications.map(app => ({
-      ...app,
       _id: app._id.toString(),
       userId: app.userId.toString(),
       createdAt: app.createdAt.toISOString(),
+      jobTitle: app.jobTitle || "", // Default to empty string
+      jobDescription: app.jobDescription || "", // Default to empty string
+      status: app.status || "Analyzed", // Default to "Analyzed"
     }));
 
   } catch (error) {
     console.error("Failed to fetch tracked applications:", error);
-    return []; // Return an empty array on error.
+    return [];
   }
 }
-
-// Add this new function to the end of your existing app/actions/stats.ts file.
 
 export async function updateApplicationStatus(applicationId: string, newStatus: string) {
   const session = await getServerSession(authOptions);
@@ -198,7 +183,6 @@ export async function updateApplicationStatus(applicationId: string, newStatus: 
     return { error: "User not authenticated." };
   }
 
-  // A list of valid statuses to prevent arbitrary data injection.
   const validStatuses = ["Analyzed", "Applied", "Interviewing", "Offer", "Rejected"];
   if (!validStatuses.includes(newStatus)) {
     return { error: "Invalid status provided." };
@@ -209,8 +193,6 @@ export async function updateApplicationStatus(applicationId: string, newStatus: 
     const db = client.db();
     const applicationTrackerCollection = db.collection("application_tracker");
 
-    // Update the document only if it matches the application ID AND the logged-in user's ID.
-    // This is a crucial security step.
     const result = await applicationTrackerCollection.updateOne(
       { _id: new ObjectId(applicationId), userId: session.user.id },
       { $set: { status: newStatus } }
@@ -220,7 +202,6 @@ export async function updateApplicationStatus(applicationId: string, newStatus: 
       return { error: "Application not found or permission denied." };
     }
 
-    // Revalidate the tracker path so the cache is cleared.
     revalidatePath("/tracker");
     return { success: true };
   } catch (error) {
@@ -229,13 +210,10 @@ export async function updateApplicationStatus(applicationId: string, newStatus: 
   }
 }
 
-// Add this new function to the end of your existing app/actions/stats.ts file.
-// It is highly efficient as it only counts documents, it doesn't retrieve them.
-
 export async function getAppliedCount() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) {
-    return 0; // Return 0 if no user is logged in
+    return 0;
   }
 
   try {
@@ -243,16 +221,15 @@ export async function getAppliedCount() {
     const db = client.db();
     const applicationTrackerCollection = db.collection("application_tracker");
 
-    // Use countDocuments for a very fast query.
-    const count = await applicationTrackerCollection.countDocuments({ 
+    const count = await applicationTrackerCollection.countDocuments({
       userId: session.user.id,
-      status: "Applied" // CORRECTED: Only count applications with the "Applied" status
+      status: "Applied"
     });
 
     return count;
 
   } catch (error) {
     console.error("Failed to fetch applied count:", error);
-    return 0; // Return 0 on any database error
+    return 0;
   }
 }
